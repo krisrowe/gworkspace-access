@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gwsa-cli"
+version = "0.1.0"
+authors = [
+  { name="CLI Developer" },
+]
+description = "A personal Gmail Workspace Assistant CLI tool."
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "google-api-python-client",
+    "google-auth-oauthlib",
+    "python-dotenv",
+]
+
+[project.scripts]
+gwsa = "gwsa_cli.__main__:cli" # Updated entry point to new package structure
+
+[tool.setuptools.packages]
+# Explicitly tell setuptools to find the 'gwsa_cli' package
+find = { where = ["."], include = ["gwsa_cli", "gwsa_cli.*"] }
