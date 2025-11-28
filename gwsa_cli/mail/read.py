@@ -23,21 +23,46 @@ def read_message(message_id: str):
         sender = next((header['value'] for header in headers if header['name'] == 'From'), 'N/A')
         date = next((header['value'] for header in headers if header['name'] == 'Date'), 'N/A')
         
-        # Get the body. This can be complex due to MIME types.
-        # For simplicity, we'll try to get the first plain text part.
-        body = ""
+        # Get the body. Emails can have both text/plain and text/html parts.
+        # Extract both if available.
+        text_body = None
+        html_body = None
+
+        def extract_body_part(payload_part):
+            """Extract and decode body content from a MIME part."""
+            if 'body' in payload_part and 'data' in payload_part['body']:
+                encoded_data = payload_part['body']['data']
+                return base64.urlsafe_b64decode(encoded_data).decode('utf-8')
+            return None
+
+        # Check for multipart message with alternative parts
         if 'parts' in msg['payload']:
             for part in msg['payload']['parts']:
-                if part['mimeType'] == 'text/plain':
-                    if 'body' in part and 'data' in part['body']:
-                        body = part['body']['data']
-                        break
+                mime_type = part.get('mimeType', '')
+
+                if mime_type == 'text/plain' and text_body is None:
+                    text_body = extract_body_part(part)
+                elif mime_type == 'text/html' and html_body is None:
+                    html_body = extract_body_part(part)
+
+                # Also check nested parts (e.g., multipart/alternative inside multipart/related)
+                if 'parts' in part:
+                    for subpart in part['parts']:
+                        submime_type = subpart.get('mimeType', '')
+                        if submime_type == 'text/plain' and text_body is None:
+                            text_body = extract_body_part(subpart)
+                        elif submime_type == 'text/html' and html_body is None:
+                            html_body = extract_body_part(subpart)
+
+        # Fallback: check if there's a simple body at top level
         elif 'body' in msg['payload'] and 'data' in msg['payload']['body']:
-            body = msg['payload']['body']['data']
-        
-        # Gmail API returns base64url encoded data
-        if body:
-            body = base64.urlsafe_b64decode(body).decode('utf-8')
+            text_body = extract_body_part(msg['payload'])
+
+        # Structure body as object with text and html fields
+        body = {
+            "text": text_body,
+            "html": html_body
+        }
 
         message_details = {
             "id": message_id,
