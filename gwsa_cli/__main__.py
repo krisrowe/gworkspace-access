@@ -51,6 +51,9 @@ def cli():
     # Mail search command
     mail_search_parser = mail_subparsers.add_parser("search", help="Search for emails. Output is in JSON format.")
     mail_search_parser.add_argument("query", type=str, help='The Gmail search query string (e.g., "after:2025-11-27 -label:Processed").')
+    mail_search_parser.add_argument("--page-token", type=str, default=None, help="Token for pagination (from previous search's nextPageToken).")
+    mail_search_parser.add_argument("--max-results", type=int, default=25, help="Maximum number of messages to return per page (default 25, due to body extraction cost).")
+    mail_search_parser.add_argument("--format", type=str, default='full', choices=['full', 'metadata'], help="'full' includes body and snippet (slower); 'metadata' is fast with headers and labelIds only.")
 
     # Mail read command
     mail_read_parser = mail_subparsers.add_parser("read", help="Read a specific email by ID.")
@@ -83,7 +86,11 @@ def cli():
             if args.mail_command == "search":
                 try:
                     logger.debug(f"Executing mail search with query: '{args.query}'")
-                    messages = search.search_messages(args.query)
+                    messages, metadata = search.search_messages(args.query, page_token=args.page_token, max_results=args.max_results, format=args.format)
+                    # Output messages as JSON to stdout, metadata to stderr for easy parsing
+                    logger.info(f"Found {len(messages)} messages (estimated total: {metadata['resultSizeEstimate']})")
+                    if metadata['nextPageToken']:
+                        logger.info(f"More pages available. Use --page-token {metadata['nextPageToken']} to fetch next page")
                     print(json.dumps(messages, indent=2))
                 except FileNotFoundError as e:
                     logger.error(f"Error: {e}")
