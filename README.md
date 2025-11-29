@@ -123,6 +123,25 @@ Once setup is complete, you can use the `gwsa` tool. All `mail` sub-commands out
 gwsa mail search "after:2025-11-27 -label:Processed"
 ```
 
+**Pagination:**
+The search command supports Gmail API pagination for handling large result sets. By default, the tool returns 25 results per page.
+
+Control the page size with `--max-results`:
+```bash
+gwsa mail search label:Inbox --max-results 50
+```
+Note: `--max-results` reflects Gmail API terminology. Maximum allowed is 500, though larger values may be slower due to body extraction overhead.
+
+Fetch subsequent pages using the `--page-token` from the previous response:
+```bash
+# First page returns metadata with nextPageToken in the logs
+gwsa mail search label:Inbox --max-results 20
+# Output includes: "More pages available. Use --page-token XXXXXX to fetch next page"
+
+# Fetch the next page using the token
+gwsa mail search label:Inbox --max-results 20 --page-token XXXXXX
+```
+
 **Read a Specific Email:**
 ```bash
 gwsa mail read MESSAGE_ID
