@@ -30,8 +30,9 @@ if not logging.root.handlers:
     )
 logger = logging.getLogger(__name__)
 
-# LOCAL_CREDS_FILE constant for client credentials
-LOCAL_CREDS_FILE = "credentials.json"
+# LOCAL_CREDS_FILE constant for client credentials - use absolute path from repo root (two levels up from setup_local.py)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOCAL_CREDS_FILE = os.path.join(_REPO_ROOT, "credentials.json")
 
 
 def update_env_variable(key, value):
