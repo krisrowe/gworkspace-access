@@ -14,7 +14,7 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 # Use ~/.config/gworkspace-access for storing credentials
 _CONFIG_DIR = os.path.expanduser("~/.config/gworkspace-access")
 USER_TOKEN_FILE = os.path.join(_CONFIG_DIR, "user_token.json")
-CREDS_FILE = os.path.join(_CONFIG_DIR, "credentials.json") # Client credentials, managed by setup_local.py
+CLIENT_SECRETS_FILE = os.path.join(_CONFIG_DIR, "client_secrets.json")
 
 
 def _get_gmail_service():

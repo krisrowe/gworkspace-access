@@ -1,20 +1,12 @@
 import os
-import re
-import subprocess
 import logging
-import time
+import hashlib
 import json
-import hashlib # For comparing file contents
-from dotenv import load_dotenv, set_key
+from pathlib import Path
+from typing import Tuple, Dict, Optional
 
 # Import mail related constants from the mail package's __init__.py
-from .mail import USER_TOKEN_FILE, SCOPES # Import constants from the mail package
-# --- Configuration ---
-ENV_PATH = '.env'
-GMAIL_CREDS_SECRET_NAME = "gmail-api-credentials"
-GWS_ACCESS_LABEL_KEY = "gws-access"
-GWS_ACCESS_LABEL_VALUE = "default"
-SETUP_LOG_FILE = "setup_local.log" # Renamed log file
+from .mail import USER_TOKEN_FILE, SCOPES
 
 # --- Setup Logging ---
 # Only configure basicConfig if a handler has not already been added
@@ -22,203 +14,118 @@ SETUP_LOG_FILE = "setup_local.log" # Renamed log file
 if not logging.root.handlers:
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(SETUP_LOG_FILE),
-            logging.StreamHandler() # Also print to console
-        ]
+        format='%(asctime)s - %(levelname)s - %(message)s'
     )
 logger = logging.getLogger(__name__)
 
 # Use ~/.config/gworkspace-access for storing credentials
 _CONFIG_DIR = os.path.expanduser("~/.config/gworkspace-access")
-LOCAL_CREDS_FILE = os.path.join(_CONFIG_DIR, "credentials.json")
+CLIENT_SECRETS_FILE = os.path.join(_CONFIG_DIR, "client_secrets.json")
 
 
-def update_env_variable(key, value):
-    """Updates or adds a key-value pair in the .env file."""
-    load_dotenv(ENV_PATH) # Reload to ensure latest state
-    set_key(ENV_PATH, key, value)
-    # Also update the current environment for immediate use
-    os.environ[key] = value
-    logger.info(f"Updated {key} in {ENV_PATH} and current environment.")
-
-def get_env_variable(key):
-    """Gets a variable from the .env file or environment."""
-    load_dotenv(ENV_PATH)
-    return os.getenv(key)
-
-def run_gcloud_command(cmd, error_message, check_error=True):
-    """Helper to run gcloud commands and log output/errors."""
+def hash_file(filepath: Path, truncate: int = 8) -> str:
+    """Create a short hash of file contents"""
     try:
-        logger.info(f"Running gcloud command: {' '.join(cmd)}")
-        result = subprocess.run(cmd, capture_output=True, text=True, check=check_error)
-        if result.stdout:
-            logger.debug(f"gcloud stdout: {result.stdout.strip()}")
-        if result.stderr:
-            logger.debug(f"gcloud stderr: {result.stderr.strip()}")
-        return result.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        logger.error(f"{error_message}: {e}")
-        logger.error(f"gcloud stderr: {e.stderr.strip()}")
-        return None
-    except FileNotFoundError:
-        logger.error("Error: 'gcloud' command not found. Please ensure Google Cloud CLI is installed and in your PATH.")
-        return None
+        with open(filepath, 'r') as f:
+            content = f.read()
+        return hashlib.sha256(content.encode()).hexdigest()[:truncate]
+    except Exception:
+        return "ERROR"
 
-def secret_exists(secret_name, project_id):
-    """Checks if a secret exists in Secret Manager using list --filter."""
-    cmd = [
-        "gcloud", "secrets", "list",
-        f"--filter=name:{secret_name}", # Corrected filter using the short secret name
-        "--format=json",
-        f"--project={project_id}" 
-    ]
-    output = run_gcloud_command(cmd, f"Error listing secrets for existence check of {secret_name}", check_error=False)
-    if output:
-        try:
-            secrets_list = json.loads(output)
-            return len(secrets_list) > 0
-        except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON from gcloud secrets list output for {secret_name}.")
-            return False
-    return False
 
-def create_secret(secret_name, project_id, file_path):
-    """Creates a secret in Secret Manager from a file."""
-    logger.info(f"Creating secret '{secret_name}' in project '{project_id}' from file '{file_path}'...")
-    cmd = [
-        "gcloud", "secrets", "create", secret_name,
-        f"--project={project_id}",
-        f"--data-file={file_path}"
-    ]
-    stdout = run_gcloud_command(cmd, f"Failed to create secret '{secret_name}'")
-    return stdout is not None
-
-def add_secret_version(secret_name, project_id, file_path):
-    """Adds a new version to an existing secret from a file."""
-    logger.info(f"Adding new version to secret '{secret_name}' in project '{project_id}' from file '{file_path}'...")
-    cmd = [
-        "gcloud", "secrets", "versions", "add", secret_name,
-        f"--project={project_id}",
-        f"--data-file={file_path}"
-    ]
-    stdout = run_gcloud_command(cmd, f"Failed to add version to secret '{secret_name}'")
-    return stdout is not None
-
-def ensure_project_id():
-    """
-    Ensures WORKSPACE_ACCESS_PROJECT is set.
-    If not, tries to find a project with the 'gws-access:default' label
-    and updates the .env file.
-    """
-    project_id = get_env_variable("WORKSPACE_ACCESS_PROJECT")
-
-    if project_id:
-        logger.info(f"Using GCP project: {project_id}")
-        return project_id
-
-    logger.info("WORKSPACE_ACCESS_PROJECT is not set. Attempting to find a GCP project with 'gws-access:default' label...")
-    
-    cmd = [
-        "gcloud", "projects", "list",
-        f"--filter=labels.{GWS_ACCESS_LABEL_KEY}:{GWS_ACCESS_LABEL_VALUE}",
-        "--format=value(projectId)"
-    ]
-    discovered_project_id = run_gcloud_command(cmd, "Error calling gcloud to list projects")
-
-    if discovered_project_id:
-        logger.info(f"Found project with '{GWS_ACCESS_LABEL_KEY}:{GWS_ACCESS_LABEL_VALUE}' label: {discovered_project_id}")
-        update_env_variable("WORKSPACE_ACCESS_PROJECT", discovered_project_id)
-        return discovered_project_id
-    else:
-        logger.error(f"Error: No GCP project found with the label '{GWS_ACCESS_LABEL_KEY}:{GWS_ACCESS_LABEL_VALUE}'.")
-        logger.error("Please ensure you have a GCP project configured with this label.")
-        logger.error("Alternatively, manually set WORKSPACE_ACCESS_PROJECT in your .env file or as an environment variable.")
-        return None
-
-def enable_gcp_apis(project_id):
-    """Enables required GCP APIs for the given project ID."""
-    apis_to_enable = [
-        "gmail.googleapis.com",
-        "secretmanager.googleapis.com"
-    ]
-    
-    all_enabled = True
-    for api in apis_to_enable:
-        logger.info(f"Ensuring {api} is enabled for project {project_id}...")
-        cmd = [
-            "gcloud", "services", "enable", api,
-            f"--project={project_id}", "--async"
-        ]
-        stdout = run_gcloud_command(cmd, f"Error enabling {api}")
-        if stdout is None:
-            all_enabled = False
-
-    if not all_enabled:
-        logger.error("Failed to enable one or more required APIs.")
-    else:
-        logger.info("All required APIs enablement initiated (asynchronous).")
-    return all_enabled
-
-def ensure_credentials_secret(project_id):
-    """Ensures the gmail-api-credentials secret exists, retrieves credentials.json,
-    and verifies it matches local content if present."""
-    
-    sm_credentials_content = None
+def load_json_safe(filepath: Path) -> Dict:
+    """Safely load JSON file"""
     try:
-        cmd = [
-            "gcloud", "secrets", "versions", "access", "latest",
-            f"--secret={GMAIL_CREDS_SECRET_NAME}",
-            f"--project={project_id}"
-        ]
-        sm_credentials_content = run_gcloud_command(cmd, f"Failed to retrieve {LOCAL_CREDS_FILE} from Secret Manager", check_error=False)
-    except subprocess.CalledProcessError as e:
-        logger.debug(f"Initial retrieval attempt failed (expected for missing/empty secret): {e.stderr.strip()}")
-        sm_credentials_content = None
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return {"error": f"Invalid JSON in {filepath}"}
+    except Exception as e:
+        return {"error": str(e)}
 
-    local_credentials_content = None
-    if os.path.exists(LOCAL_CREDS_FILE):
-        with open(LOCAL_CREDS_FILE, "r") as f:
-            local_credentials_content = f.read()
 
-    # --- Verification ---
-    if sm_credentials_content and local_credentials_content:
-        # Compare content. Normalize JSON to ignore formatting differences.
-        try:
-            sm_json = json.dumps(json.loads(sm_credentials_content), sort_keys=True)
-            local_json = json.dumps(json.loads(local_credentials_content), sort_keys=True)
-            if sm_json != local_json:
-                logger.error(f"Error: Local '{LOCAL_CREDS_FILE}' does NOT match content in Secret Manager.")
-                logger.error("Please ensure your local 'credentials.json' is the latest, then update the secret:")
-                logger.error(f"  gcloud secrets versions add {GMAIL_CREDS_SECRET_NAME} --project={project_id} --data-file={LOCAL_CREDS_FILE}")
-                return False
-            else:
-                logger.info(f"Local '{LOCAL_CREDS_FILE}' matches content in Secret Manager.")
-        except json.JSONDecodeError:
-            logger.error(f"Error: Could not parse '{LOCAL_CREDS_FILE}' or Secret Manager content as JSON. Manual inspection needed.")
-            return False
-    elif local_credentials_content and not sm_credentials_content:
-        logger.error(f"Error: Local '{LOCAL_CREDS_FILE}' found, but no secret '{GMAIL_CREDS_SECRET_NAME}' in Secret Manager.")
-        logger.error("Please push your local 'credentials.json' to Secret Manager:")
-        logger.error(f"  gcloud secrets create {GMAIL_CREDS_SECRET_NAME} --project={project_id} --data-file={LOCAL_CREDS_FILE}")
-        return False
-    elif not local_credentials_content and sm_credentials_content:
-        # If local file is missing but secret exists, retrieve it
-        os.makedirs(_CONFIG_DIR, exist_ok=True)
-        with open(LOCAL_CREDS_FILE, "w") as f:
-            f.write(sm_credentials_content)
-        logger.info(f"{LOCAL_CREDS_FILE} retrieved from Secret Manager and saved locally.")
-        return True
-    elif not local_credentials_content and not sm_credentials_content:
-        logger.error(f"Error: No local '{LOCAL_CREDS_FILE}' found, and secret '{GMAIL_CREDS_SECRET_NAME}' not found in Secret Manager.")
-        logger.error("Please download your 'credentials.json' from Google Cloud Console (Desktop app type),")
-        logger.error("place it in the current directory, then push it to Secret Manager manually:")
-        logger.error(f"  gcloud secrets create {GMAIL_CREDS_SECRET_NAME} --project={project_id} --data-file={LOCAL_CREDS_FILE}")
-        return False
+def check_client_config(status_only: bool = False) -> Tuple[bool, Dict]:
+    """Check client application configuration"""
+    gwa_dir = Path(_CONFIG_DIR)
 
-    logger.info(f"Client credentials ({LOCAL_CREDS_FILE}) ensured.")
-    return True
+    if not gwa_dir.exists():
+        return False, {
+            "status": "NOT FOUND",
+            "message": f"gworkspace-access directory not found at {gwa_dir}",
+        }
+
+    client_secrets_path = gwa_dir / 'client_secrets.json'
+
+    if not client_secrets_path.exists():
+        return False, {
+            "status": "MISSING",
+            "message": "client_secrets.json not found",
+        }
+
+    client_secrets = load_json_safe(client_secrets_path)
+    creds_hash = hash_file(client_secrets_path)
+    project_id = client_secrets.get('installed', {}).get('project_id', 'UNKNOWN')
+    client_id = client_secrets.get('installed', {}).get('client_id', 'UNKNOWN')[:20]
+
+    if 'error' in client_secrets:
+        return False, {
+            "status": "PARSE ERROR",
+            "error": client_secrets['error'],
+            "client_creds_hash": creds_hash,
+            "project_id": project_id
+        }
+
+    status_indicator = "VERIFIED" if status_only else "READY"
+    return True, {
+        "status": status_indicator,
+        "client_secrets_file": str(client_secrets_path),
+        "client_creds_hash": creds_hash,
+        "project_id": project_id,
+        "client_id_prefix": client_id,
+        "scopes": client_secrets.get('installed', {}).get('scopes', [])
+    }
+
+
+def check_user_credentials(status_only: bool = False) -> Tuple[bool, Dict]:
+    """Check user credential status"""
+    gwa_dir = Path(_CONFIG_DIR)
+
+    if not gwa_dir.exists():
+        return False, {
+            "status": "NOT FOUND",
+            "message": f"gworkspace-access directory not found at {gwa_dir}",
+        }
+
+    user_token_path = gwa_dir / 'user_token.json'
+
+    if not user_token_path.exists():
+        return False, {
+            "status": "MISSING",
+            "user_token_path": str(user_token_path),
+            "message": "user_token.json not found - run 'gwsa setup' to authenticate"
+        }
+
+    user_token = load_json_safe(user_token_path)
+    token_hash = hash_file(user_token_path)
+
+    if 'error' in user_token:
+        return False, {
+            "status": "PARSE ERROR",
+            "user_token_path": str(user_token_path),
+            "user_token_hash": token_hash,
+            "error": user_token['error']
+        }
+
+    status_indicator = "VERIFIED" if status_only else "READY"
+    return True, {
+        "status": status_indicator,
+        "user_token_path": str(user_token_path),
+        "user_token_hash": token_hash,
+        "scopes": user_token.get('scopes', []),
+        "expiry": user_token.get('expiry', 'UNKNOWN')
+    }
+
+
 
 def ensure_user_token_json(new_user: bool = False):
     """
@@ -265,15 +172,15 @@ def ensure_user_token_json(new_user: bool = False):
         
         if not creds: # If refresh failed or creds were never valid
             logger.info("Initiating new user authorization flow via browser.")
-            if not os.path.exists(LOCAL_CREDS_FILE):
-                logger.error(f"Error: Client credentials file '{LOCAL_CREDS_FILE}' not found.")
+            if not os.path.exists(CLIENT_SECRETS_FILE):
+                logger.error(f"Error: Client credentials file '{CLIENT_SECRETS_FILE}' not found.")
                 logger.error("Cannot initiate user authorization flow without client credentials.")
-                logger.error(f"Please ensure '{LOCAL_CREDS_FILE}' is present (run 'gwsa setup' first if needed).")
+                logger.error(f"Please ensure '{CLIENT_SECRETS_FILE}' is present (run 'gwsa setup' first if needed).")
                 return False
 
             try:
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    LOCAL_CREDS_FILE, SCOPES
+                    CLIENT_SECRETS_FILE, SCOPES
                 )
                 creds = flow.run_local_server(port=0) # Port 0 for dynamic port
                 logger.info("New user authorization completed via browser.")
@@ -289,48 +196,172 @@ def ensure_user_token_json(new_user: bool = False):
     
     return True
 
-def run_setup(new_user: bool = False, client_creds: str = None):
-    logger.info("Starting local setup script...")
+def print_status_table(title: str, status_ok: bool, data: Dict, status_only: bool = False, action_performed: bool = False) -> None:
+    """Print a formatted status table with action indicator and unique icons.
 
-    # If client_creds path is provided, copy it to config directory
+    In setup mode (status_only=False):
+    - ✓ [VERIFIED] when configuration is complete and valid, no action needed
+    - ✔ [COMPLETED] when we just performed a setup action in this execution
+
+    In status-only mode (status_only=True):
+    - ✓ [VERIFIED] when configuration is complete and valid, no action would be needed
+    - ◐ [NEEDED] when something would be set up if not in status-only mode
+    - ✗ [MISSING] when configuration is missing entirely
+    """
+    import click
+
+    # Determine the action indicator and icon
+    if status_ok:
+        if action_performed:
+            if status_only:
+                action_indicator = "NEEDED"
+                status_symbol = "◐"  # Partially filled circle for "would be set"
+            else:
+                action_indicator = "COMPLETED"
+                status_symbol = "✔"  # Check mark for completed
+        else:
+            action_indicator = "VERIFIED"
+            status_symbol = "✓"  # Check for verified
+    else:
+        if status_only:
+            action_indicator = "MISSING"
+        else:
+            action_indicator = data.get("status", "MISSING")
+        status_symbol = "✗"  # X for missing/error
+
+    click.echo(f"\n{status_symbol} {title} [{action_indicator}]")
+    click.echo("=" * 80)
+
+    for key, value in data.items():
+        if key == "status":
+            continue  # Skip status as we already displayed it
+        if isinstance(value, list):
+            value = ", ".join(value) if value else "(none)"
+        elif value is None:
+            value = "(not set)"
+
+        click.echo(f"  {key:<30} {str(value):<45}")
+
+    click.echo("=" * 80)
+
+
+def run_setup(new_user: bool = False, client_creds: str = None, status_only: bool = False):
+    """
+    Setup or check status - single unified path with conditional actions and reporting.
+
+    Stage 1: Evaluate what needs to be done (same logic for all paths)
+    Stage 2: Execute if not status_only, else report what would happen
+
+    :param new_user: Force new OAuth flow
+    :param client_creds: Path to client_secrets.json to copy
+    :param status_only: If True, skip write operations and report what would happen
+    """
+    import click
+    import shutil
+
+    if not status_only:
+        logger.info("Starting local setup script...")
+
+    # Ensure config directory exists (always, needed for both paths)
+    gwa_dir = Path(_CONFIG_DIR)
+    gwa_dir.mkdir(parents=True, exist_ok=True)
+
+    # ===== STAGE 1: EVALUATE WHAT NEEDS TO BE DONE (same for all paths) =====
+
+    # Plan for client secrets
+    client_action_needed = False
+    client_secrets_existed = os.path.exists(CLIENT_SECRETS_FILE)
+    files_are_identical = False
+
     if client_creds:
         if os.path.exists(client_creds):
-            os.makedirs(_CONFIG_DIR, exist_ok=True)
-            import shutil
-            shutil.copy(client_creds, LOCAL_CREDS_FILE)
-            logger.info(f"Client credentials copied from {client_creds} to {LOCAL_CREDS_FILE}")
+            # Check if files are identical (avoid redundant copy)
+            if client_secrets_existed:
+                source_hash = hash_file(Path(client_creds))
+                dest_hash = hash_file(Path(CLIENT_SECRETS_FILE))
+                files_are_identical = source_hash == dest_hash
+
+            client_action_needed = not files_are_identical
         else:
-            logger.error(f"Error: Client credentials file not found: {client_creds}")
+            logger.error(f"Error: Client secrets file not found: {client_creds}")
             return False
 
-    project_id = ensure_project_id()
-    if not project_id:
+    # Plan for user token
+    user_action_needed = False
+    user_token_existed = os.path.exists(USER_TOKEN_FILE)
+
+    if new_user or not user_token_existed:
+        user_action_needed = True
+
+    # ===== STAGE 2: EXECUTE IF NOT STATUS_ONLY =====
+
+    client_action_performed = False
+    user_action_performed = False
+
+    if not status_only:
+        # Execute client secrets copy if needed
+        if client_creds and client_action_needed:
+            shutil.copy(client_creds, CLIENT_SECRETS_FILE)
+            logger.info(f"Client secrets copied from {client_creds} to {CLIENT_SECRETS_FILE}")
+            client_action_performed = True
+
+        # Execute user token setup if needed
+        if user_action_needed:
+            if not ensure_user_token_json(new_user=new_user):
+                return False
+            user_action_performed = True
+
+    # ===== STAGE 3: DETERMINE STATUS INDICATORS =====
+
+    # After execution (or evaluation), determine what status to report
+    # In status_only mode, action_needed becomes the indicator
+    # In setup mode, action_performed becomes the indicator
+
+    if status_only:
+        client_action_performed = client_action_needed
+        user_action_performed = user_action_needed
+
+    # Display configuration status (same output for both paths)
+    click.echo("\n" + "=" * 80)
+    click.echo("gworkspace-access (gwsa) Configuration Status")
+    click.echo("=" * 80)
+
+    click.echo("\nCONFIGURATION PATH SEARCH")
+    click.echo("=" * 80)
+    status_indicator = "✓ FOUND" if gwa_dir.exists() else "✗ not found"
+    click.echo(f"  {status_indicator:<10} {gwa_dir}")
+    click.echo("=" * 80)
+
+    # Check client and user credentials (same checks for both paths)
+    client_ok, client_data = check_client_config(status_only=status_only)
+    print_status_table("CLIENT APPLICATION CONFIGURATION", client_ok, client_data, status_only=status_only, action_performed=client_action_performed)
+
+    user_ok, user_data = check_user_credentials(status_only=status_only)
+    print_status_table("USER AUTHENTICATION", user_ok, user_data, status_only=status_only, action_performed=user_action_performed)
+
+    # Overall status (same output for both paths)
+    click.echo("\n" + "=" * 80)
+    if client_ok and user_ok:
+        click.echo("✓ gwsa is fully configured and ready to use")
+        return True
+    elif client_ok and not user_ok:
+        click.echo("⚠ Client app configured but user authentication missing")
+        click.echo("  Run: gwsa setup")
         return False
-
-    if not enable_gcp_apis(project_id):
+    elif not client_ok and user_ok:
+        click.echo("⚠ User authenticated but client app configuration missing")
+        click.echo("  This is unusual - check your gworkspace-access installation")
         return False
-
-    time.sleep(5)
-    logger.info("Attempting to ensure client credentials secret after a short delay...")
-
-    if not ensure_credentials_secret(project_id):
+    else:
+        click.echo("✗ gwsa is not properly configured")
+        if not gwa_dir.exists():
+            click.echo("  gworkspace-access not found - install it from:")
+            click.echo("  https://github.com/krisrowe/gworkspace-access")
+        else:
+            click.echo("  Run: gwsa setup")
         return False
-
-    logger.info("Client credentials (credentials.json) ensured.")
-
-    # Now handle user credentials
-    if not ensure_user_token_json(new_user=new_user): # Pass new_user flag
-        return False
-
-    logger.info("User credentials (user_token.json) ensured.")
-    logger.info("Local setup script finished successfully.")
-    return True
 
 if __name__ == "__main__":
     import sys
-    # Load .env variables at the very beginning
-    load_dotenv()
-    # This block won't have new_user flag available directly, as it's meant for CLI parsing.
-    # When run directly, it will behave as if --new-user is not passed.
     if not run_setup():
         sys.exit(1)
