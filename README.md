@@ -29,6 +29,22 @@ Before you begin, ensure you have the following installed and configured:
 3.  **`pip`**:
     *   Python's package installer.
 
+## Quick Start (Single Command)
+
+If you have already completed the one-time setup on another machine and have your credentials saved in Google Secret Manager:
+
+```bash
+# Clone the repo, install dependencies, and run setup
+git clone https://github.com/krisrowe/gworkspace-access.git && \
+cd gworkspace-access && \
+pip install -e . && \
+gwsa setup
+```
+
+That's it! The setup will automatically discover your project and download your credentials from Secret Manager.
+
+---
+
 ## First-Time Setup
 
 This process walks through installing the `gwsa` tool and configuring it for the first time.
