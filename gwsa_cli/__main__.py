@@ -10,9 +10,9 @@ import click
 
 from . import setup_local
 from . import __version__
-from .mail import search
-from .mail import read
-from .mail import label
+from .mail import search as search_module
+from .mail import read as read_module
+from .mail import label as label_module
 
 
 # Configure logging at the application level
@@ -90,7 +90,7 @@ def search(query, page_token, max_results, format):
     """Search for emails. Output is in JSON format."""
     try:
         logger.debug(f"Executing mail search with query: '{query}'")
-        messages, metadata = search.search_messages(query, page_token=page_token, max_results=max_results, format=format)
+        messages, metadata = search_module.search_messages(query, page_token=page_token, max_results=max_results, format=format)
         logger.info(f"Found {len(messages)} messages (estimated total: {metadata['resultSizeEstimate']})")
         if metadata.get('nextPageToken'):
             logger.info(f"More pages available. Use --page-token {metadata['nextPageToken']} to fetch next page")
@@ -113,7 +113,7 @@ def read_command(message_id):
     """Read a specific email by ID."""
     try:
         logger.info(f"Executing mail read for message ID: '{message_id}'")
-        message_details = read.read_message(message_id)
+        message_details = read_module.read_message(message_id)
         click.echo(json.dumps(message_details, indent=2))
     except FileNotFoundError as e:
         logger.error(f"Error: {e}")
@@ -137,12 +137,12 @@ def label_command(message_id, label_name, remove):
     try:
         action = "removing" if remove else "adding"
         logger.info(f"{action.capitalize()} label '{label_name}' for message ID: '{message_id}'")
-        updated_message = label.modify_message_labels(message_id, label_name, add=not remove)
+        updated_message = label_module.modify_message_labels(message_id, label_name, add=not remove)
         if updated_message:
             click.echo(json.dumps(updated_message, indent=2))
         else:
             logger.info(f"Label '{label_name}' was already in the desired state for message ID '{message_id}'.")
-            message_details = read.read_message(message_id)
+            message_details = read_module.read_message(message_id)
             click.echo(json.dumps(message_details, indent=2))
     except FileNotFoundError as e:
         logger.error(f"Error: {e}")
