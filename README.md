@@ -178,4 +178,24 @@ If you need to regenerate your user token, switch to a different Google account,
 ```bash
 gwsa setup --new-user
 ```
+
+### Using Custom Credentials Path
+
+If you have a `credentials.json` file in a non-standard location, you can specify its path using the `--client-creds` flag:
+
+```bash
+gwsa setup --client-creds /path/to/credentials.json
+```
+
+The specified credentials file will be copied to the configuration directory for use by the tool.
+
+## Credential Storage
+
+All credentials are stored centrally in `~/.config/gworkspace-access/` regardless of where the `gwsa` tool is installed or which directory you run the command from. This includes:
+
+- **`credentials.json`**: Your OAuth 2.0 client credentials (downloaded from Google Cloud Console)
+- **`user_token.json`**: Your user-specific authorization token (generated during the OAuth flow)
+
+This centralized storage makes it easy to use `gwsa` from any directory on your machine.
+
 ---

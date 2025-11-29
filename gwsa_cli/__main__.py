@@ -39,8 +39,10 @@ def cli():
 
     # Setup command
     setup_parser = subparsers.add_parser("setup", help="Set up local environment and credentials.")
-    setup_parser.add_argument("--new-user", action="store_true", 
-                              help="Force a new user authentication flow, ignoring any existing user_token.json.") # Added --new-user flag
+    setup_parser.add_argument("--new-user", action="store_true",
+                              help="Force a new user authentication flow, ignoring any existing user_token.json.")
+    setup_parser.add_argument("--client-creds", type=str,
+                              help="Path to credentials.json file to use for OAuth setup.")
     
     # Mail command parser
     mail_parser = subparsers.add_parser("mail", help="Operations related to Gmail.")
@@ -64,7 +66,7 @@ def cli():
 
     # Handle the setup command
     if args.command == "setup":
-        if setup_local.run_setup(new_user=args.new_user): # Pass new_user flag to run_setup
+        if setup_local.run_setup(new_user=args.new_user, client_creds=args.client_creds):
             logger.info("GWSA setup completed successfully.")
         else:
             logger.error("GWSA setup failed. Please check logs for details.")

@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 # If modifying these scopes, the user_token.json file will need to be re-generated.
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
-# Get the repository root directory (three levels up from gwsa_cli/mail/__init__.py)
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-USER_TOKEN_FILE = os.path.join(_REPO_ROOT, "user_token.json")
-CREDS_FILE = os.path.join(_REPO_ROOT, "credentials.json") # Client credentials, managed by setup_local.py
+# Use ~/.config/gworkspace-access for storing credentials
+_CONFIG_DIR = os.path.expanduser("~/.config/gworkspace-access")
+USER_TOKEN_FILE = os.path.join(_CONFIG_DIR, "user_token.json")
+CREDS_FILE = os.path.join(_CONFIG_DIR, "credentials.json") # Client credentials, managed by setup_local.py
 
 
 def _get_gmail_service():

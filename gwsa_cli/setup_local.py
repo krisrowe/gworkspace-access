@@ -30,9 +30,9 @@ if not logging.root.handlers:
     )
 logger = logging.getLogger(__name__)
 
-# LOCAL_CREDS_FILE constant for client credentials - use absolute path from repo root (two levels up from setup_local.py)
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOCAL_CREDS_FILE = os.path.join(_REPO_ROOT, "credentials.json")
+# Use ~/.config/gworkspace-access for storing credentials
+_CONFIG_DIR = os.path.expanduser("~/.config/gworkspace-access")
+LOCAL_CREDS_FILE = os.path.join(_CONFIG_DIR, "credentials.json")
 
 
 def update_env_variable(key, value):
@@ -205,6 +205,7 @@ def ensure_credentials_secret(project_id):
         return False
     elif not local_credentials_content and sm_credentials_content:
         # If local file is missing but secret exists, retrieve it
+        os.makedirs(_CONFIG_DIR, exist_ok=True)
         with open(LOCAL_CREDS_FILE, "w") as f:
             f.write(sm_credentials_content)
         logger.info(f"{LOCAL_CREDS_FILE} retrieved from Secret Manager and saved locally.")
@@ -228,6 +229,10 @@ def ensure_user_token_json(new_user: bool = False):
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
+
+    # Ensure config directory exists
+    os.makedirs(_CONFIG_DIR, exist_ok=True)
+    logger.debug(f"Ensured config directory exists: {_CONFIG_DIR}")
 
     logger.info(f"Ensuring user credentials ({USER_TOKEN_FILE})...")
 
@@ -284,8 +289,20 @@ def ensure_user_token_json(new_user: bool = False):
     
     return True
 
-def run_setup(new_user: bool = False): # Added new_user parameter
+def run_setup(new_user: bool = False, client_creds: str = None):
     logger.info("Starting local setup script...")
+
+    # If client_creds path is provided, copy it to config directory
+    if client_creds:
+        if os.path.exists(client_creds):
+            os.makedirs(_CONFIG_DIR, exist_ok=True)
+            import shutil
+            shutil.copy(client_creds, LOCAL_CREDS_FILE)
+            logger.info(f"Client credentials copied from {client_creds} to {LOCAL_CREDS_FILE}")
+        else:
+            logger.error(f"Error: Client credentials file not found: {client_creds}")
+            return False
+
     project_id = ensure_project_id()
     if not project_id:
         return False
@@ -293,7 +310,7 @@ def run_setup(new_user: bool = False): # Added new_user parameter
     if not enable_gcp_apis(project_id):
         return False
 
-    time.sleep(5) 
+    time.sleep(5)
     logger.info("Attempting to ensure client credentials secret after a short delay...")
 
     if not ensure_credentials_secret(project_id):
