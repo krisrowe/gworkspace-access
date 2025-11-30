@@ -82,7 +82,7 @@ def mail():
 @click.option('--page-token', default=None,
               help="Token for pagination (from previous search's nextPageToken).")
 @click.option('--max-results', type=int, default=25,
-              help='Maximum number of messages to return per page (default 25, due to body extraction cost).')
+              help='Maximum number of messages to return (default 25, due to body extraction cost).')
 @click.option('--format', type=click.Choice(['full', 'metadata']), default='full',
               help="'full' includes body and snippet (slower); 'metadata' is fast with headers and labelIds only.")
 @require_user_credentials
