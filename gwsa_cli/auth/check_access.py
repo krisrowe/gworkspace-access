@@ -6,6 +6,7 @@ Use it to verify tokens work before deploying them or to diagnose auth issues.
 
 import os
 import logging
+from .. import config
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +58,21 @@ def check_credentials(
     import google.auth
     from google.oauth2.credentials import Credentials
 
+    # Load auth mode from config
+    auth_mode = config.get_config_value("auth.mode", "token")
+
+    # --application-default flag takes highest precedence
     if use_adc:
         creds, project = google.auth.default()
-        source = "Application Default Credentials"
+        source = "Application Default Credentials (from flag)"
+        if project:
+            source += f" (project: {project})"
+        return creds, source
+
+    # Check config for auth.mode == 'adc'
+    if auth_mode == 'adc':
+        creds, project = google.auth.default()
+        source = "Application Default Credentials (from config)"
         if project:
             source += f" (project: {project})"
         return creds, source

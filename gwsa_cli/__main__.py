@@ -13,6 +13,8 @@ from . import __version__
 from .mail import search as search_module
 from .mail import read as read_module
 from .mail import label as label_module
+from .sheets_commands import sheets as sheets_module
+from .config_commands import config_group as config_module
 from .auth import check_access as check_access_module
 from .auth import create_token as create_token_module
 
@@ -294,8 +296,10 @@ def access():
 
 # Add commands to groups using add_command()
 gwsa.add_command(setup, name='setup')
+gwsa.add_command(config_module, name='config')
 gwsa.add_command(access)
 gwsa.add_command(mail)
+gwsa.add_command(sheets_module, name='sheets')
 
 access.add_command(create_token, name='token')
 access.add_command(check_access, name='check')
