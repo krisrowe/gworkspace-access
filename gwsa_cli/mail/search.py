@@ -6,6 +6,9 @@ from ..mail import _get_gmail_service # Changed to relative import
 
 logger = logging.getLogger(__name__)
 
+from ..decorators import require_scopes
+
+@require_scopes('mail')
 def search_messages(query_string: str, page_token: Optional[str] = None, max_results: int = 25, format: str = 'full') -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """
     Searches for Gmail messages matching the given query string with pagination support.
