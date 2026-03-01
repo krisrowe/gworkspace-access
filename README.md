@@ -240,6 +240,26 @@ List all profiles:
 gwsa profiles list
 ```
 
+### External Tooling (Terraform, Scripts, etc.)
+
+`gwsa` isolated profiles can be effortlessly consumed by external systems without overwriting your global machine state.
+
+**Option 1: Inject via Environment (Recommended)**
+Use the `path` command for Unix command substitution to inject the isolated profile path directly into standard Google Cloud variables.
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=$(gwsa profiles path my-adc)
+terraform apply
+```
+
+**Option 2: System-wide Default (Legacy)**
+If you prefer managing a single global system identity, or if a legacy tool does not respect environment variables, use the `apply` command to set a profile as your default Google Application Credential natively.
+
+```bash
+gwsa profiles apply my-adc
+legacy-tool run
+```
+
 ### Re-authenticating
 
 If credentials expire or become invalid:
